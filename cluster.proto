@@ -1,0 +1,81 @@
+syntax = "proto3";
+package replication;
+
+service Cluster {
+  rpc RequestVote(VoteRequest) returns (VoteResponse);
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+  rpc Write(WriteRequest) returns (WriteResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc Status(Empty) returns (StatusResponse);
+  rpc Control(ControlRequest) returns (StatusResponse);
+}
+
+message Empty {}
+message Entry {
+  int64 index = 1;
+  int64 term = 2;
+  string key = 3;
+  string value = 4;
+  bool noop = 5;
+}
+message VoteRequest {
+  int64 term = 1;
+  int32 candidate_id = 2;
+  int64 last_index = 3;
+  int64 last_term = 4;
+}
+message VoteResponse { int64 term = 1; bool granted = 2; }
+message FetchRequest {
+  int64 term = 1;
+  int32 follower_id = 2;
+  int64 last_index = 3;
+  int64 last_term = 4;
+}
+message FetchResponse {
+  int64 term = 1;
+  int32 leader_id = 2;
+  bool success = 3;
+  int64 retry_index = 4;
+  repeated Entry entries = 5;
+  int64 commit_index = 6;
+}
+message WriteRequest {
+  string key = 1;
+  string value = 2;
+  bool crash_after_append = 3;
+}
+message WriteResponse {
+  int64 term = 1;
+  int32 leader_id = 2;
+  bool committed = 3;
+  int64 index = 4;
+  string error = 5;
+}
+message ReadRequest { string key = 1; }
+message ReadResponse {
+  int64 term = 1;
+  bool found = 2;
+  string value = 3;
+  int64 commit_index = 4;
+}
+message PeerStatus {
+  int32 node_id = 1;
+  bool active = 2;
+  int64 match_index = 3;
+}
+message StatusResponse {
+  int32 node_id = 1;
+  string role = 2;
+  int64 term = 3;
+  int32 leader_id = 4;
+  int64 commit_index = 5;
+  int64 last_index = 6;
+  repeated PeerStatus peers = 7;
+  bool fetch_paused = 8;
+  bool commit_paused = 9;
+  int64 truncations = 10;
+}
+message ControlRequest {
+  optional bool pause_fetch = 1;
+  optional bool pause_commit = 2;
+}
