@@ -5,11 +5,12 @@ import cluster_pb2 as pb
 
 
 class Storage:
-    """All safety-critical state is persisted in one SQLite transaction."""
+    """Persiste metadados, historico e dados confirmados na mesma transacao."""
 
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
+        # WAL e sincronizacao completa protegem as transacoes contra quedas.
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript("""
@@ -41,7 +42,8 @@ class Storage:
         if not 0 <= self.commit_index <= len(self.log):
             raise RuntimeError("Indice de commit persistido invalido.")
 
-    def save(self) -> None:
+    def salvar(self) -> None:
+        # O bloco confirma tudo junto; uma falha desfaz a transacao inteira.
         with self.db:
             self.db.execute(
                 "UPDATE metadata SET term=?, voted_for=?, commit_index=? WHERE id=1",
@@ -52,18 +54,20 @@ class Storage:
                 "INSERT INTO log VALUES (?, ?, ?, ?, ?)",
                 [(e.index, e.term, e.key, e.value, e.noop) for e in self.log],
             )
+            # Reconstroi o banco apenas ate o commit; entradas pendentes ficam no log.
             self.db.execute("DELETE FROM kv")
             self.db.executemany(
                 "INSERT INTO kv VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 [(e.key, e.value) for e in self.log[:self.commit_index] if not e.noop],
             )
 
-    def read(self, key: str) -> str | None:
+    def consultar(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
         return row[0] if row is not None else None
 
-    def term_at(self, index: int) -> int:
+    def obter_termo_no_indice(self, index: int) -> int:
+        # O indice zero representa o prefixo vazio, anterior a primeira entrada.
         return self.log[index - 1].term if index else 0
 
-    def close(self) -> None:
+    def fechar(self) -> None:
         self.db.close()

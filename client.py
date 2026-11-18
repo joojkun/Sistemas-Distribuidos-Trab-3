@@ -19,11 +19,11 @@ class Client:
         self.stubs = {node: rpc.ClusterStub(channel)
                       for node, channel in self.channels.items()}
 
-    def close(self):
+    def fechar(self):
         for channel in self.channels.values():
             channel.close()
 
-    def statuses(self):
+    def consultar_estados(self):
         result = {}
         for node, stub in self.stubs.items():
             try:
@@ -32,12 +32,15 @@ class Client:
                 print(f"No {node}: indisponivel ({error.code().name})")
         return result
 
-    def write(self, node: int, key: str, value: str, crash: bool = False):
+    def gravar(self, node: int, key: str, value: str, crash: bool = False):
         request = pb.WriteRequest(key=key, value=value, crash_after_append=crash)
+        # Impede seguir indefinidamente indicacoes de lider que formem um ciclo.
         visited = set()
         while node not in visited:
             visited.add(node)
             response = self.stubs[node].Write(request, timeout=self.cfg.write_timeout + 1)
+            # So repete quando sabe que o no recusou por nao ser o lider.
+            # Timeout ou queda apos append podem ter resultado indeterminado.
             if response.error != "NOT_LEADER":
                 return response
             leader = response.leader_id
@@ -63,30 +66,31 @@ Valores com espacos podem ser colocados entre aspas.
 """
 
 
-def display(message):
+def exibir_resposta(message):
     print(json.dumps(MessageToDict(message, preserving_proto_field_name=True,
                                    always_print_fields_with_no_presence=True),
                      indent=2, ensure_ascii=False))
 
 
-def execute(client: Client, words: list[str]):
+def executar_comando(client: Client, words: list[str]):
     command, *args = words
     if command == "help" and not args:
         print(HELP)
     elif command == "status" and not args:
-        for status in client.statuses().values():
-            display(status)
+        for status in client.consultar_estados().values():
+            exibir_resposta(status)
     elif command in ("put", "crash-put") and len(args) == 3:
-        display(client.write(int(args[0]), args[1], args[2], command == "crash-put"))
+        exibir_resposta(client.gravar(int(args[0]), args[1], args[2], command == "crash-put"))
     elif command == "get" and len(args) == 2:
-        display(client.stubs[int(args[0])].Read(
+        # Read consulta somente o no escolhido; nao segue redirecionamento.
+        exibir_resposta(client.stubs[int(args[0])].Read(
             pb.ReadRequest(key=args[1]), timeout=client.cfg.rpc_timeout
         ))
     elif command == "getall" and len(args) == 1:
         for node, stub in client.stubs.items():
             try:
                 print(f"No {node}:")
-                display(stub.Read(pb.ReadRequest(key=args[0]), timeout=client.cfg.rpc_timeout))
+                exibir_resposta(stub.Read(pb.ReadRequest(key=args[0]), timeout=client.cfg.rpc_timeout))
             except grpc.RpcError as error:
                 print(f"Indisponivel: {error.code().name}")
     elif command == "sleep" and len(args) == 1:
@@ -98,22 +102,22 @@ def execute(client: Client, words: list[str]):
         if args[1] not in ("on", "off"):
             raise ValueError("Use on ou off.")
         field = "pause_fetch" if command == "pause-fetch" else "pause_commit"
-        display(client.stubs[int(args[0])].Control(
+        exibir_resposta(client.stubs[int(args[0])].Control(
             pb.ControlRequest(**{field: args[1] == "on"}), timeout=client.cfg.rpc_timeout
         ))
     else:
         raise ValueError("Comando/argumentos invalidos. Use help.")
 
 
-def main():
+def principal():
     parser = argparse.ArgumentParser(description="Cliente gRPC interativo")
     parser.add_argument("--config", default="config.json")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    client = Client(Settings.load(args.config))
+    client = Client(Settings.carregar(args.config))
     try:
         if args.command:
-            execute(client, args.command)
+            executar_comando(client, args.command)
             return
         print(HELP)
         while True:
@@ -122,7 +126,7 @@ def main():
                 if words == ["exit"]:
                     break
                 if words:
-                    execute(client, words)
+                    executar_comando(client, words)
             except (ValueError, KeyError, RuntimeError) as error:
                 print(f"Erro: {error}")
             except grpc.RpcError as error:
@@ -131,12 +135,12 @@ def main():
             except EOFError:
                 break
     finally:
-        client.close()
+        client.fechar()
 
 
 if __name__ == "__main__":
     try:
-        main()
+        principal()
     except KeyboardInterrupt:
         print("\nCliente encerrado.")
     except (ValueError, KeyError, RuntimeError, grpc.RpcError) as error:

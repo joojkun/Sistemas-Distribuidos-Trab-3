@@ -14,12 +14,13 @@ class Settings:
     write_timeout: float
 
     @classmethod
-    def load(cls, path: str) -> "Settings":
+    def carregar(cls, path: str) -> "Settings":
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         raw["nodes"] = {int(key): value for key, value in raw["nodes"].items()}
         result = cls(**raw)
         if set(result.nodes) != {1, 2, 3, 4} or len(set(result.nodes.values())) != 4:
             raise ValueError("Configure exatamente quatro nos distintos: 1, 2, 3, 4.")
+        # A deteccao de replica inativa antecede o menor prazo de eleicao.
         if not (
             0 < result.fetch_interval < result.heartbeat_timeout
             < result.election_min < result.election_max

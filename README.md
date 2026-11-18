@@ -4,6 +4,23 @@ Implementacao do trabalho de Sistemas Distribuidos: quatro processos de nos
 com o mesmo codigo e um processo de cliente. Python 3.11+, gRPC/Protocol Buffers
 e SQLite. O banco final e um mapa chave/valor com operacao de insercao/atualizacao.
 
+## Guia visual dos eventos
+
+Abra [fluxos_cluster.html](./fluxos_cluster.html) no navegador, sem precisar
+iniciar os servidores. Sao 12 diagramas de sequencia e 64 etapas clicaveis com
+exemplos, explicacoes simples, codigo real e um dicionario dos termos.
+Inclui eleicao, Fetch/Pull, gravacao, consulta, redirecionamento, queda do lider,
+perda de quorum, recuperacao, truncamento, isolamento, termo maior e persistencia.
+
+Para atualizar os trechos depois de modificar o codigo:
+
+```powershell
+python gerar_fluxos.py
+```
+
+O gerador extrai as funcoes diretamente dos fontes. O HTML gerado e autonomo,
+funciona offline e pode ser compartilhado sem o restante do projeto.
+
 ## Executar no Windows
 
 No PowerShell, dentro desta pasta:
@@ -74,6 +91,44 @@ Tambem e possivel executar um comando sem abrir o modo interativo:
 - [client.py](./client.py): cliente gRPC com redirecionamento e leituras por no.
 - [settings.py](./settings.py) e [config.json](./config.json): configuracao validada.
 - [CHECKLIST.md](./CHECKLIST.md): verificacao rastreavel do enunciado.
+
+### Leitura do codigo em portugues
+
+As funcoes e metodos proprios usam nomes em portugues, com comentarios nos
+pontos de eleicao, quorum, commit, persistencia e correcao de divergencias.
+Exemplos para acompanhar [node.py](./node.py):
+
+| Metodo | Responsabilidade |
+|---|---|
+| `reiniciar_prazo_eleicao` | Sorteia o prazo de uma nova eleicao |
+| `observar_termo` | Atualiza o termo e abandona uma lideranca antiga |
+| `iniciar_eleicao` | Vira candidato, pede votos e verifica a maioria |
+| `solicitar_voto` | Atende o pedido de voto recebido de outro no |
+| `buscar_do_lider` | Inicia o Fetch como seguidor (estrategia Pull) |
+| `atender_busca` | Responde ao Fetch no lider |
+| `obter_replicas_ativas` | Identifica as replicas com Fetch recente |
+| `avancar_commit` | Verifica as confirmacoes e efetiva o prefixo seguro |
+| `gravar` | Recebe uma escrita e aguarda commit antes de confirmar |
+| `consultar` | Le somente o banco final local |
+| `montar_estado` / `consultar_estado` | Prepara o estado / atende sua consulta |
+| `controlar_testes` | Atende os controles de laboratorio |
+| `descobrir_lider` | Consulta os pares para localizar o lider |
+| `executar` | Mantem o ciclo de verificacao, busca e eleicao |
+| `iniciar_servidor` / `principal` | Inicia o servico / processa os argumentos |
+
+Em [storage.py](./storage.py), `salvar`, `consultar`,
+`obter_termo_no_indice` e `fechar` cuidam do disco. No cliente,
+`consultar_estados`, `gravar`, `executar_comando` e `exibir_resposta`
+organizam a interacao com o usuario.
+
+Os nomes do contrato gRPC (`RequestVote`, `Fetch`, `Write`, `Read`, `Status`,
+`Control`) permanecem iguais: na classe do no, aliases apontam diretamente
+para os metodos em portugues, sem adicionar etapas ao protocolo. Os stubs
+gerados, campos das mensagens, esquema SQLite, configuracoes e comandos do
+terminal tambem foram preservados para manter compatibilidade.
+Nomes exigidos por Python, bibliotecas e testes, como `__init__`, `setUp`,
+`asyncSetUp`, `asyncTearDown` e o prefixo `test_`, nao sao traduzidos.
+Os diagramas HTML foram regenerados com os novos nomes e comentarios.
 
 Todas as comunicacoes cliente/no e no/no usam exclusivamente gRPC:
 
